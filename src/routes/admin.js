@@ -6,6 +6,7 @@ const Event = require('../models/Event');
 const Article = require('../models/Article');
 const Forum = require('../models/Forum');
 const Achievement = require('../models/Achievement');
+const Report = require('../models/Report');
 
 const router = express.Router();
 
@@ -13,12 +14,26 @@ const router = express.Router();
 router.use(authenticate, requireAdmin);
 
 // Get platform statistics
-router.get('/stats', (req, res) => {
-  // Implementation for getting platform statistics
-  res.json({
-    success: true,
-    data: { stats: {} }
-  });
+router.get('/stats', async (req, res, next) => {
+  try {
+    const [totalUsers, activeUsers, totalPosts, totalArticles, pendingReports] = await Promise.all([
+      User.countDocuments({}),
+      User.countDocuments({ isActive: true }),
+      Forum.countDocuments({}),
+      Article.countDocuments({ status: 'published' }),
+      Report.countDocuments({ status: 'pending' })
+    ]);
+    res.json({ success: true, data: { stats: {
+      totalUsers,
+      activeUsers,
+      totalPosts,
+      totalArticles,
+      pendingReports,
+      newUsersThisWeek: 0,
+      engagementRate: 0,
+      averageSessionTime: '0m'
+    } } });
+  } catch (err) { next(err); }
 });
 
 // Get all users
@@ -69,12 +84,32 @@ router.put('/articles/:id/status', async (req, res, next) => {
 });
 
 // Get reports
-router.get('/reports', (req, res) => {
-  // Implementation for getting reports
-  res.json({
-    success: true,
-    data: { reports: [] }
-  });
+router.get('/reports', async (req, res, next) => {
+  try {
+    const { status = 'pending', page = 1, limit = 20 } = req.query;
+    const filter = {};
+    if (status) filter.status = status;
+    const reports = await Report.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(Number(limit));
+    const total = await Report.countDocuments(filter);
+    res.json({ success: true, data: { reports, total } });
+  } catch (err) { next(err); }
+});
+
+// Simple analytics endpoint (trend placeholders; can be expanded)
+router.get('/analytics', async (req, res, next) => {
+  try {
+    const topCategories = [
+      { name: 'AI & Innovation', posts: await Forum.countDocuments({ category: 'ai' }), engagement: 0 },
+      { name: 'Marketing', posts: await Forum.countDocuments({ category: 'marketing' }), engagement: 0 },
+      { name: 'Technology', posts: await Forum.countDocuments({ category: 'technology' }), engagement: 0 },
+      { name: 'Analytics', posts: await Forum.countDocuments({ category: 'analytics' }), engagement: 0 }
+    ];
+    const dailyActiveUsers = [];
+    res.json({ success: true, data: { topCategories, dailyActiveUsers } });
+  } catch (err) { next(err); }
 });
 
 module.exports = router;

@@ -18,6 +18,8 @@ const articleRoutes = require('./routes/articles');
 const eventRoutes = require('./routes/events');
 const leaderboardRoutes = require('./routes/leaderboard');
 const adminRoutes = require('./routes/admin');
+const feedRoutes = require('./routes/feed');
+const dropdownRoutes = require('./routes/dropdowns');
 
 const app = express();
 
@@ -83,6 +85,8 @@ app.use('/api/articles', articleRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/feed', feedRoutes);
+app.use('/api/dropdowns', dropdownRoutes);
 
 // Serve static files (uploads)
 app.use('/uploads', express.static('uploads'));

@@ -3,6 +3,7 @@ const path = require('path');
 const database = require('../config/database');
 const config = require('../config/config');
 const User = require('../models/User');
+const DropdownOption = require('../models/DropdownOption');
 
 async function upsertUser({ name, email, department, avatar, role }) {
   let user = await User.findOne({ email });
@@ -67,7 +68,8 @@ async function run() {
     await superAdmin.save();
   }
 
-  // No mock entity creation here
+  // Seed dropdown options
+  await DropdownOption.seedDefaultOptions();
 
   await mongoose.connection.close();
   // eslint-disable-next-line no-console

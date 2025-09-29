@@ -65,10 +65,11 @@ const generalLimiter = rateLimit({
   }
 });
 
-// Strict rate limiter for authentication endpoints
+// Strict rate limiter for authentication endpoints (relaxed in development to ease testing)
+const isDev = String(config.nodeEnv).toLowerCase() === 'development';
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // 10 attempts per window
+  windowMs: isDev ? 60 * 1000 : 15 * 60 * 1000, // 1 min in dev, 15 min otherwise
+  max: isDev ? 1000 : 10, // Allow many attempts in dev for testing
   message: {
     success: false,
     message: 'Too many authentication attempts, please try again later.'
@@ -81,7 +82,7 @@ const authLimiter = rateLimit({
     res.status(429).json({
       success: false,
       message: 'Too many authentication attempts, please try again later.',
-      retryAfter: 900 // 15 minutes in seconds
+      retryAfter: isDev ? 60 : 900 // seconds
     });
   }
 });
