@@ -1,5 +1,6 @@
 const express = require('express');
 const { optionalAuth } = require('../middleware/auth');
+const { searchLimiter } = require('../middleware/rateLimiter');
 const Article = require('../models/Article');
 const Forum = require('../models/Forum');
 const Event = require('../models/Event');
@@ -76,7 +77,7 @@ function mapEventToFeedItem(doc) {
 }
 
 // GET /api/feed?page=1&limit=5
-router.get('/', optionalAuth, async (req, res, next) => {
+router.get('/', searchLimiter, optionalAuth, async (req, res, next) => {
   try {
     const page = Math.max(parseInt(req.query.page || '1', 10), 1);
     const limit = Math.max(parseInt(req.query.limit || '5', 10), 1);

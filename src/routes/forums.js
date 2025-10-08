@@ -1,6 +1,7 @@
 const express = require('express');
 const { authenticate, optionalAuth } = require('../middleware/auth');
 const { validate, forumSchemas } = require('../middleware/validation');
+const { searchLimiter, createUserLimiter } = require('../middleware/rateLimiter');
 const { uploadForumAttachments } = require('../middleware/upload');
 const Forum = require('../models/Forum');
 
@@ -27,7 +28,7 @@ const mapPostToFrontend = (postDoc, currentUserId) => {
 };
 
 // Get forum posts (public)
-router.get('/posts', optionalAuth, validate(forumSchemas.getPosts, 'query'), async (req, res, next) => {
+router.get('/posts', searchLimiter, optionalAuth, validate(forumSchemas.getPosts, 'query'), async (req, res, next) => {
   try {
     const posts = await Forum.find({}).populate('author', 'name email avatar department').sort({ createdAt: -1 });
     const mapped = posts.map((p) => mapPostToFrontend(p, req.user?._id));
@@ -52,7 +53,7 @@ router.get('/posts/:id', optionalAuth, async (req, res, next) => {
 router.use(authenticate);
 
 // Create forum post
-router.post('/posts', uploadForumAttachments, validate(forumSchemas.createPost), async (req, res, next) => {
+router.post('/posts', createUserLimiter(60 * 1000, 10, 'Too many posts, please try again later.'), uploadForumAttachments, validate(forumSchemas.createPost), async (req, res, next) => {
   try {
     const { title, content, category, tags } = req.body;
     const normalizedTags = Array.isArray(tags)
@@ -97,7 +98,7 @@ router.delete('/posts/:id', (req, res) => {
 });
 
 // Add reply to post
-router.post('/posts/:id/replies', validate(forumSchemas.addReply), async (req, res, next) => {
+router.post('/posts/:id/replies', createUserLimiter(60 * 1000, 20, 'Too many replies, please try again later.'), validate(forumSchemas.addReply), async (req, res, next) => {
   try {
     const { content } = req.body;
     const post = await Forum.findById(req.params.id);
@@ -112,7 +113,7 @@ router.post('/posts/:id/replies', validate(forumSchemas.addReply), async (req, r
 });
 
 // Like/unlike post
-router.post('/posts/:id/like', async (req, res, next) => {
+router.post('/posts/:id/like', createUserLimiter(60 * 1000, 30, 'Too many like actions, please try again later.'), async (req, res, next) => {
   try {
     const post = await Forum.findById(req.params.id);
     if (!post) return res.status(404).json({ success: false, message: 'Post not found' });

@@ -1,6 +1,7 @@
 const express = require('express');
 const { authenticate, optionalAuth } = require('../middleware/auth');
 const { validate, articleSchemas, frontendSchemas } = require('../middleware/validation');
+const { searchLimiter, createUserLimiter } = require('../middleware/rateLimiter');
 const { uploadArticleImages } = require('../middleware/upload');
 const Article = require('../models/Article');
 
@@ -60,7 +61,7 @@ const toFrontendType = (doc) => {
 };
 
 // Get articles (public)
-router.get('/', optionalAuth, validate(articleSchemas.getArticles, 'query'), async (req, res, next) => {
+router.get('/', searchLimiter, optionalAuth, validate(articleSchemas.getArticles, 'query'), async (req, res, next) => {
   try {
     const articles = await Article.find({ status: 'published' })
       .populate('author', 'name email avatar department')
@@ -141,7 +142,7 @@ router.delete('/:id', (req, res) => {
 });
 
 // Like/unlike article
-router.post('/:id/like', async (req, res, next) => {
+router.post('/:id/like', createUserLimiter(60 * 1000, 30, 'Too many like actions, please try again later.'), async (req, res, next) => {
   try {
     const article = await Article.findById(req.params.id);
     if (!article) return res.status(404).json({ success: false, message: 'Article not found' });
@@ -154,7 +155,7 @@ router.post('/:id/like', async (req, res, next) => {
 });
 
 // Bookmark/unbookmark article
-router.post('/:id/bookmark', async (req, res, next) => {
+router.post('/:id/bookmark', createUserLimiter(60 * 1000, 30, 'Too many bookmark actions, please try again later.'), async (req, res, next) => {
   try {
     const article = await Article.findById(req.params.id);
     if (!article) return res.status(404).json({ success: false, message: 'Article not found' });
@@ -167,7 +168,7 @@ router.post('/:id/bookmark', async (req, res, next) => {
 });
 
 // Add comment to article
-router.post('/:id/comments', validate(articleSchemas.addComment), async (req, res, next) => {
+router.post('/:id/comments', createUserLimiter(60 * 1000, 10, 'Too many comments, please try again later.'), validate(articleSchemas.addComment), async (req, res, next) => {
   try {
     const { content } = req.body;
     const article = await Article.findById(req.params.id);

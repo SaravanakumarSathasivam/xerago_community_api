@@ -66,21 +66,45 @@ const emailTemplates = {
   passwordReset: (user, resetUrl) => ({
     subject: 'Reset Your Password',
     html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #3B82F6;">Reset Your Password</h2>
-        <p>Hi ${user.name},</p>
-        <p>We received a request to reset your password. Click the button below to reset it:</p>
-        <div style="text-align: center; margin: 30px 0;">
-          <a href="${resetUrl}" style="background-color: #EF4444; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Reset Password</a>
+      <!doctype html>
+      <html>
+      <head>
+        <meta name="viewport" content="width=device-width">
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+        <title>Reset Your Password</title>
+        <style>
+          body { background-color: #f6f6f6; font-family: Arial, sans-serif; -webkit-font-smoothing: antialiased; line-height: 1.6; margin: 0; padding: 0; }
+          .container { max-width: 580px; margin: 0 auto; padding: 20px; }
+          .card { background: #ffffff; border-radius: 8px; padding: 24px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+          h1 { font-size: 22px; color: #111827; margin: 0 0 12px; }
+          p { color: #374151; font-size: 14px; margin: 0 0 12px; }
+          .btn { display: inline-block; background: #EF4444; color: #ffffff !important; text-decoration: none; padding: 12px 18px; border-radius: 6px; font-weight: 600; }
+          .muted { color: #6B7280; font-size: 12px; }
+          .footer { text-align: center; color: #9CA3AF; font-size: 12px; margin-top: 16px; }
+          .logo { font-weight: 800; color: #3B82F6; }
+          .code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; background: #111827; color: #fff; padding: 10px 14px; border-radius: 6px; letter-spacing: 1px; display: inline-block; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="card">
+            <div class="logo">Xerago Community</div>
+            <h1>Reset Your Password</h1>
+            <p>Hi ${user.name},</p>
+            <p>We received a request to reset your password. Click the button below to set a new password.</p>
+            <p style="text-align:center; margin: 24px 0;">
+              <a href="${resetUrl}" class="btn">Reset Password</a>
+            </p>
+            <p class="muted">If the button doesn't work, copy and paste this link into your browser:</p>
+            <p class="muted" style="word-break: break-all;">${resetUrl}</p>
+            <p class="muted">This link will expire in 1 hour. If you didn't request this, you can ignore this message.</p>
+          </div>
+          <div class="footer">© ${new Date().getFullYear()} Xerago Community</div>
         </div>
-        <p>If the button doesn't work, you can copy and paste this link into your browser:</p>
-        <p style="word-break: break-all; color: #6B7280;">${resetUrl}</p>
-        <p>This link will expire in 1 hour.</p>
-        <p>If you didn't request this password reset, please ignore this email.</p>
-        <p>Best regards,<br>The Xerago Team</p>
-      </div>
+      </body>
+      </html>
     `,
-    text: `Reset Your Password. Hi ${user.name}, We received a request to reset your password. Please visit: ${resetUrl}`
+    text: `Reset Your Password. Hi ${user.name}, We received a request to reset your password. Open this link: ${resetUrl}. This link expires in 1 hour.`
   }),
 
   passwordChanged: (user) => ({

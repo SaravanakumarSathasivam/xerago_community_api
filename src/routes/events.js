@@ -1,5 +1,6 @@
 const express = require("express");
 const { authenticate, optionalAuth } = require("../middleware/auth");
+const { searchLimiter, createUserLimiter } = require('../middleware/rateLimiter');
 const {
   validate,
   eventSchemas,
@@ -57,6 +58,7 @@ const mapEventToFrontend = (eventDoc, currentUserId) => {
 // Get events (public)
 router.get(
   "/",
+  searchLimiter,
   optionalAuth,
   validate(eventSchemas.getEvents, "query"),
   async (req, res, next) => {
@@ -73,7 +75,7 @@ router.get(
 );
 
 // Get specific event (public)
-router.get("/:id", optionalAuth, async (req, res, next) => {
+router.get("/:id", searchLimiter, optionalAuth, async (req, res, next) => {
   try {
     const event = await Event.findById(req.params.id).populate(
       "organizer",
@@ -94,7 +96,7 @@ router.get("/:id", optionalAuth, async (req, res, next) => {
 });
 
 // Get upcoming events (public)
-router.get("/upcoming", optionalAuth, async (req, res, next) => {
+router.get("/upcoming", searchLimiter, optionalAuth, async (req, res, next) => {
   try {
     const events = await Event.getUpcoming(20);
     const mapped = events.map((e) => mapEventToFrontend(e, req.user?._id));
@@ -110,6 +112,7 @@ router.use(authenticate);
 // Create event
 router.post(
   "/",
+  createUserLimiter(60 * 1000, 10, 'Too many events created, please try again later.'),
   uploadEventImages,
   validate(frontendSchemas.createEvent),
   async (req, res, next) => {
@@ -237,6 +240,7 @@ router.delete("/:id", async (req, res, next) => {
 // RSVP to event (toggle attending for current user)
 router.post(
   "/:id/rsvp",
+  createUserLimiter(60 * 1000, 30, 'Too many RSVP actions, please try again later.'),
   validate(eventSchemas.rsvp),
   async (req, res, next) => {
     try {

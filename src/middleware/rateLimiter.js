@@ -153,7 +153,7 @@ const uploadLimiter = rateLimit({
 // Search rate limiter
 const searchLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 30, // 30 searches per minute
+  max: 100, // 100 searches per minute
   message: {
     success: false,
     message: 'Too many search requests, please try again later.'
