@@ -10,7 +10,7 @@ const {
   deleteDropdownOption,
   seedDropdownOptions
 } = require('../controllers/dropdownController');
-const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { authenticate, requireAdmin } = require('../middleware/auth');
 
 // Validation middleware
 const validateDropdownOption = [
@@ -58,9 +58,9 @@ router.get('/:category', getDropdownOptions);
 router.post('/batch', validateBatchRequest, getBatchDropdownOptions);
 
 // Admin routes
-// router.post('/', authenticateToken, requireAdmin, validateDropdownOption, createDropdownOption);
-// router.put('/:id', authenticateToken, requireAdmin, validateDropdownOption, updateDropdownOption);
-// router.delete('/:id', authenticateToken, requireAdmin, deleteDropdownOption);
-// router.post('/seed', authenticateToken, requireAdmin, seedDropdownOptions);
+router.post('/', authenticate, requireAdmin, validateDropdownOption, createDropdownOption);
+router.put('/:id', authenticate, requireAdmin, validateDropdownOption, updateDropdownOption);
+router.delete('/:id', authenticate, requireAdmin, deleteDropdownOption);
+router.post('/seed', authenticate, requireAdmin, seedDropdownOptions);
 
 module.exports = router;

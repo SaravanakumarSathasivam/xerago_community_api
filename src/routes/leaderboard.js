@@ -167,3 +167,56 @@ router.get('/achievements', optionalAuth, async (req, res, next) => {
   }
 });
 
+// GET /api/leaderboard/community-stats
+router.get('/community-stats', optionalAuth, async (req, res, next) => {
+  try {
+    const [activeMembers, totalPosts, totalArticles, helpfulAnswers] = await Promise.all([
+      User.countDocuments({ isActive: true }),
+      Forum.countDocuments({}),
+      Article.countDocuments({ status: 'published' }),
+      Forum.aggregate([
+        { $project: { repliesCount: { $size: '$replies' } } },
+        { $group: { _id: null, total: { $sum: '$repliesCount' } } }
+      ])
+    ]);
+    res.json({ success: true, data: {
+      activeMembers,
+      totalPosts,
+      totalArticles,
+      helpfulAnswers: helpfulAnswers[0]?.total || 0
+    } });
+  } catch (err) { next(err); }
+});
+
+// GET /api/leaderboard/my-summary (requires auth)
+router.get('/my-summary', authenticate, async (req, res, next) => {
+  try {
+    const user = req.user;
+    // Earned achievements: flatten user's badges/achievements to ids/names
+    await user.populate('gamification.achievements.achievement');
+    const earned = (user.gamification?.achievements || []).map((a) => ({
+      id: a.achievement._id.toString(),
+      name: a.achievement.name,
+      icon: a.achievement.icon,
+      rarity: a.achievement.rarity,
+      earnedAt: a.earnedAt
+    }));
+
+    // Next level progress (every 100 points -> +1 level in current logic)
+    const points = user.gamification?.points || 0;
+    const level = user.gamification?.level || 1;
+    const currentLevelFloor = (level - 1) * 100;
+    const progressInLevel = Math.max(0, points - currentLevelFloor);
+    const progressPercent = Math.min(100, Math.round((progressInLevel / 100) * 100));
+    const pointsToNext = Math.max(0, 100 - progressInLevel);
+
+    res.json({ success: true, data: {
+      points,
+      level,
+      progressPercent,
+      pointsToNext,
+      earnedAchievements: earned
+    } });
+  } catch (err) { next(err); }
+});
+

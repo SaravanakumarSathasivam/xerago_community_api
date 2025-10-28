@@ -6,6 +6,7 @@ const Event = require('../models/Event');
 const Article = require('../models/Article');
 const Forum = require('../models/Forum');
 const Achievement = require('../models/Achievement');
+const Setting = require('../models/Setting');
 const Report = require('../models/Report');
 
 const router = express.Router();
@@ -98,113 +99,195 @@ router.get('/reports', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// Simple analytics endpoint (trend placeholders; can be expanded)
+// Analytics endpoint with engagement, DAU, growth metrics
 router.get('/analytics', async (req, res, next) => {
   try {
-    const topCategories = [
-      { name: 'AI & Innovation', posts: await Forum.countDocuments({ category: 'ai' }), engagement: 0 },
-      { name: 'Marketing', posts: await Forum.countDocuments({ category: 'marketing' }), engagement: 0 },
-      { name: 'Technology', posts: await Forum.countDocuments({ category: 'technology' }), engagement: 0 },
-      { name: 'Analytics', posts: await Forum.countDocuments({ category: 'analytics' }), engagement: 0 }
-    ];
+    // 1) Engagement rate: total (likes+replies) / totalPosts
+    const totalPosts = await Forum.countDocuments({});
+    const totalArticles = await Article.countDocuments({});
+    const totalEvents = await Event.countDocuments({});
+    const engagementAgg = await Forum.aggregate([
+      { $project: { interactions: { $add: [{ $size: '$likes' }, { $size: '$replies' }] } } },
+      { $group: { _id: null, totalInteractions: { $sum: '$interactions' } } }
+    ]);
+    const totalInteractions = engagementAgg[0]?.totalInteractions || 0;
+    const engagementRate = totalPosts > 0 ? Math.round((totalInteractions / totalPosts) * 100) : 0;
+
+    // 2) Avg session time (mock calculation: we can track via session logs in future)
+    const averageSessionTime = '12m'; // Placeholder; integrate session tracking if available
+
+    // 3) Daily active users (last 7 days)
+    const now = new Date();
     const dailyActiveUsers = [];
-    res.json({ success: true, data: { topCategories, dailyActiveUsers } });
+    for (let i = 6; i >= 0; i--) {
+      const dayStart = new Date(now);
+      dayStart.setDate(now.getDate() - i);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(dayStart);
+      dayEnd.setDate(dayStart.getDate() + 1);
+      const count = await User.countDocuments({ updatedAt: { $gte: dayStart, $lt: dayEnd } });
+      dailyActiveUsers.push({ date: dayStart.toISOString().slice(0, 10), users: count });
+    }
+
+    // 4) Content growth: posts created this month vs last month
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 1);
+    const postsThisMonth = await Forum.countDocuments({ createdAt: { $gte: thisMonthStart } });
+    const postsLastMonth = await Forum.countDocuments({ createdAt: { $gte: lastMonthStart, $lt: lastMonthEnd } });
+    const contentGrowth = postsLastMonth > 0 ? Math.round(((postsThisMonth - postsLastMonth) / postsLastMonth) * 100) : 0;
+
+    // 5) Top categories by posts
+    const categories = ['ai', 'marketing', 'technology', 'analytics', 'general'];
+    const topCategories = [];
+    for (const cat of categories) {
+      const agg = await Forum.aggregate([
+        { $match: { category: cat } },
+        { $project: { likesCount: { $size: '$likes' }, repliesCount: { $size: '$replies' } } },
+        { $group: { _id: null, posts: { $sum: 1 }, engagement: { $sum: { $add: ['$likesCount', '$repliesCount'] } } } }
+      ]);
+      topCategories.push({
+        name: cat === 'ai' ? 'AI & Innovation' : cat.charAt(0).toUpperCase() + cat.slice(1),
+        posts: agg[0]?.posts || 0,
+        engagement: agg[0]?.engagement || 0
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        engagementRate,
+        averageSessionTime,
+        dailyActiveUsers,
+        contentGrowth,
+        topCategories,
+      }
+    });
+  } catch (err) { next(err); }
+});
+
+// -------- Content: Forums Moderation --------
+router.get('/forums/posts', async (req, res, next) => {
+  try {
+    const { page = 1, limit = 20, search } = req.query;
+    const filter = {};
+    if (search) {
+      filter.$or = [
+        { title: new RegExp(search, 'i') },
+        { content: new RegExp(search, 'i') }
+      ];
+    }
+    const posts = await Forum.find(filter)
+      .populate('author', 'name email department avatar')
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(Number(limit));
+    const total = await Forum.countDocuments(filter);
+    res.json({ success: true, data: { posts, total } });
+  } catch (err) { next(err); }
+});
+
+router.delete('/forums/posts/:id', async (req, res, next) => {
+  try {
+    const deleted = await Forum.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ success: false, message: 'Post not found' });
+    res.json({ success: true, message: 'Post deleted' });
+  } catch (err) { next(err); }
+});
+
+// -------- Content: Articles Review --------
+router.get('/articles', async (req, res, next) => {
+  try {
+    const { page = 1, limit = 20, status, search } = req.query;
+    const filter = {};
+    if (status) filter.status = status;
+    if (search) filter.$or = [
+      { title: new RegExp(search, 'i') },
+      { content: new RegExp(search, 'i') }
+    ];
+    const items = await Article.find(filter)
+      .populate('author', 'name email department avatar')
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(Number(limit));
+    const total = await Article.countDocuments(filter);
+    res.json({ success: true, data: { articles: items, total } });
+  } catch (err) { next(err); }
+});
+
+// existing PUT /articles/:id/status handles status updates
+
+// -------- Content: Reports moderation --------
+router.put('/reports/:id/status', async (req, res, next) => {
+  try {
+    const { status } = req.body; // 'pending' | 'resolved' | 'dismissed'
+    const report = await Report.findByIdAndUpdate(req.params.id, { status }, { new: true });
+    if (!report) return res.status(404).json({ success: false, message: 'Report not found' });
+    res.json({ success: true, message: 'Report status updated', data: { report } });
+  } catch (err) { next(err); }
+});
+
+// -------- Gamification: Achievements CRUD --------
+router.get('/achievements', async (req, res, next) => {
+  try {
+    const items = await Achievement.find({}).sort({ createdAt: -1 });
+    res.json({ success: true, data: { achievements: items } });
+  } catch (err) { next(err); }
+});
+
+router.post('/achievements', async (req, res, next) => {
+  try {
+    const created = await Achievement.create(req.body);
+    res.status(201).json({ success: true, data: { achievement: created } });
+  } catch (err) { next(err); }
+});
+
+router.put('/achievements/:id', async (req, res, next) => {
+  try {
+    const updated = await Achievement.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!updated) return res.status(404).json({ success: false, message: 'Achievement not found' });
+    res.json({ success: true, data: { achievement: updated } });
+  } catch (err) { next(err); }
+});
+
+router.delete('/achievements/:id', async (req, res, next) => {
+  try {
+    const deleted = await Achievement.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ success: false, message: 'Achievement not found' });
+    res.json({ success: true, message: 'Achievement deleted' });
+  } catch (err) { next(err); }
+});
+
+// -------- Gamification: Point System Settings --------
+router.get('/settings/points', async (req, res, next) => {
+  try {
+    const defaults = {
+      articleCreate: 10,
+      articleLike: 2,
+      forumPost: 5,
+      forumReply: 3,
+      eventAttend: 8,
+      eventCreate: 15,
+    };
+    const saved = await Setting.getValue('gamification.points', defaults);
+    res.json({ success: true, data: { points: { ...defaults, ...saved } } });
+  } catch (err) { next(err); }
+});
+
+router.put('/settings/points', async (req, res, next) => {
+  try {
+    const allowedKeys = ['articleCreate','articleLike','forumPost','forumReply','eventAttend','eventCreate'];
+    const incoming = req.body?.points || {};
+    const sanitized = {};
+    for (const k of allowedKeys) {
+      const v = Number(incoming[k]);
+      if (!Number.isNaN(v) && v >= 0 && v <= 1000) sanitized[k] = v;
+    }
+    const updated = await Setting.setValue('gamification.points', sanitized);
+    res.json({ success: true, message: 'Point settings updated', data: { points: updated } });
   } catch (err) { next(err); }
 });
 
 module.exports = router;
 
-// Bootstrap minimal sample documents to initialize collections (admin only)
-// router.post('/bootstrap-samples', async (req, res, next) => {
-//   try {
-//     // 1) Sample non-admin user
-//     const sampleUser = await User.findOneAndUpdate(
-//       { email: 'sample.user@xerago.com' },
-//       {
-//         name: 'Sample User',
-//         email: 'sample.user@xerago.com',
-//         password: 'TempPass@123',
-//         department: 'Marketing',
-//         isEmailVerified: true
-//       },
-//       { upsert: true, new: true, setDefaultsOnInsert: true }
-//     );
 
-//     // 2) Sample event
-//     const sampleEvent = await Event.findOneAndUpdate(
-//       { title: 'Sample Event' },
-//       {
-//         title: 'Sample Event',
-//         description: 'Kickoff demo event',
-//         organizer: sampleUser._id,
-//         category: 'other',
-//         type: 'offline',
-//         location: { name: 'HQ' },
-//         startDate: new Date(Date.now() + 24*60*60*1000),
-//         endDate: new Date(Date.now() + 26*60*60*1000),
-//         capacity: 50,
-//         tags: ['Demo'],
-//         status: 'published'
-//       },
-//       { upsert: true, new: true, setDefaultsOnInsert: true }
-//     );
-
-//     // 3) Sample article
-//     const sampleArticle = await Article.findOneAndUpdate(
-//       { title: 'Sample Article' },
-//       {
-//         title: 'Sample Article',
-//         content: 'This is a sample knowledge article body.',
-//         author: sampleUser._id,
-//         category: 'technology',
-//         tags: ['Sample','Demo'],
-//         status: 'published',
-//         publishedAt: new Date()
-//       },
-//       { upsert: true, new: true, setDefaultsOnInsert: true }
-//     );
-
-//     // 4) Sample forum post
-//     const samplePost = await Forum.findOneAndUpdate(
-//       { title: 'Sample Discussion' },
-//       {
-//         title: 'Sample Discussion',
-//         content: 'Welcome to the forum! This is a starter thread.',
-//         author: sampleUser._id,
-//         category: 'general',
-//         tags: ['welcome']
-//       },
-//       { upsert: true, new: true, setDefaultsOnInsert: true }
-//     );
-
-//     // 5) Sample achievement
-//     const sampleAchievement = await Achievement.findOneAndUpdate(
-//       { name: 'First Login' },
-//       {
-//         name: 'First Login',
-//         description: 'Logged in to the portal for the first time',
-//         category: 'milestone',
-//         type: 'badge',
-//         icon: '🏁',
-//         color: '#10B981',
-//         rarity: 'common',
-//         points: 5,
-//         criteria: { type: 'days_active', value: 1, timeframe: 'all_time' }
-//       },
-//       { upsert: true, new: true, setDefaultsOnInsert: true }
-//     );
-
-//     res.json({
-//       success: true,
-//       data: {
-//         user: sampleUser,
-//         event: sampleEvent,
-//         article: sampleArticle,
-//         post: samplePost,
-//         achievement: sampleAchievement
-//       }
-//     });
-//   } catch (err) {
-//     next(err);
-//   }
-// });

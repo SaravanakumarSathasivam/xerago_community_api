@@ -34,7 +34,16 @@ const authenticate = async (req, res, next) => {
       });
     }
 
+    // Inactivity auto-logout: if lastActivity older than maxIdleMs, force re-auth
+    const maxIdleMs = (config.session && config.session.maxIdleMs) || (30 * 60 * 1000); // default 30 mins
+    const lastActivity = req.session?.lastActivity || req.headers['x-last-activity'];
+    if (lastActivity && Date.now() - Number(lastActivity) > maxIdleMs) {
+      return res.status(440).json({ success: false, message: 'Session expired due to inactivity.' });
+    }
+
+    // Attach user and mark request activity
     req.user = user;
+    if (req.session) req.session.lastActivity = Date.now();
     next();
   } catch (error) {
     logger.error('Authentication error:', error);

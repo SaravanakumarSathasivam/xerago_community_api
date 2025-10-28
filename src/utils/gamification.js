@@ -2,6 +2,7 @@ const User = require('../models/User');
 const Achievement = require('../models/Achievement');
 const Leaderboard = require('../models/Leaderboard');
 const config = require('../config/config');
+const Setting = require('../models/Setting');
 const logger = require('./logger');
 
 /**
@@ -14,31 +15,16 @@ const awardPoints = async (userId, action, metadata = {}) => {
       throw new Error('User not found');
     }
 
-    let points = 0;
-    
-    // Calculate points based on action
-    switch (action) {
-      case 'article_create':
-        points = config.gamification.points.articleCreate;
-        break;
-      case 'article_like':
-        points = config.gamification.points.articleLike;
-        break;
-      case 'forum_post':
-        points = config.gamification.points.forumPost;
-        break;
-      case 'forum_reply':
-        points = config.gamification.points.forumReply;
-        break;
-      case 'event_attend':
-        points = config.gamification.points.eventAttend;
-        break;
-      case 'event_create':
-        points = config.gamification.points.eventCreate;
-        break;
-      default:
-        points = 0;
-    }
+    const dynamicPoints = await Setting.getValue('gamification.points', config.gamification.points);
+    const map = {
+      article_create: dynamicPoints.articleCreate,
+      article_like: dynamicPoints.articleLike,
+      forum_post: dynamicPoints.forumPost,
+      forum_reply: dynamicPoints.forumReply,
+      event_attend: dynamicPoints.eventAttend,
+      event_create: dynamicPoints.eventCreate,
+    };
+    const points = Number(map[action]) || 0;
 
     if (points > 0) {
       await user.addPoints(points);
