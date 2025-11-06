@@ -69,6 +69,16 @@ const postSchema = new mongoose.Schema({
     enum: ['active', 'closed', 'archived', 'pinned'],
     default: 'active'
   },
+  approvalStatus: {
+    type: String,
+    enum: ['pending', 'approved', 'rejected'],
+    default: 'pending'
+  },
+  approvedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  approvedAt: Date,
   priority: {
     type: String,
     enum: ['low', 'medium', 'high', 'urgent'],

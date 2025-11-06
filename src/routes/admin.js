@@ -169,13 +169,16 @@ router.get('/analytics', async (req, res, next) => {
 // -------- Content: Forums Moderation --------
 router.get('/forums/posts', async (req, res, next) => {
   try {
-    const { page = 1, limit = 20, search } = req.query;
+    const { page = 1, limit = 20, search, approvalStatus } = req.query;
     const filter = {};
     if (search) {
       filter.$or = [
         { title: new RegExp(search, 'i') },
         { content: new RegExp(search, 'i') }
       ];
+    }
+    if (approvalStatus) {
+      filter.approvalStatus = approvalStatus;
     }
     const posts = await Forum.find(filter)
       .populate('author', 'name email department avatar')
@@ -192,6 +195,23 @@ router.delete('/forums/posts/:id', async (req, res, next) => {
     const deleted = await Forum.findByIdAndDelete(req.params.id);
     if (!deleted) return res.status(404).json({ success: false, message: 'Post not found' });
     res.json({ success: true, message: 'Post deleted' });
+  } catch (err) { next(err); }
+});
+
+router.put('/forums/posts/:id/approval', async (req, res, next) => {
+  try {
+    const { approvalStatus } = req.body; // 'pending' | 'approved' | 'rejected'
+    const post = await Forum.findByIdAndUpdate(
+      req.params.id,
+      {
+        approvalStatus,
+        approvedBy: req.user._id,
+        approvedAt: new Date()
+      },
+      { new: true }
+    ).populate('author', 'name email department avatar');
+    if (!post) return res.status(404).json({ success: false, message: 'Post not found' });
+    res.json({ success: true, message: 'Post approval status updated', data: { post } });
   } catch (err) { next(err); }
 });
 

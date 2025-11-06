@@ -91,6 +91,7 @@ dropdownOptionSchema.statics.seedDefaultOptions = async function() {
     { category: 'forum_sort', value: 'recent', label: 'Most Recent', order: 1 },
     { category: 'forum_sort', value: 'popular', label: 'Most Liked', order: 2 },
     { category: 'forum_sort', value: 'discussed', label: 'Most Discussed', order: 3 },
+    { category: 'forum_sort', value: 'unanswered', label: 'UnAnswered', order: 4 },
 
     // Article Categories
     { category: 'article_category', value: 'marketing', label: 'Marketing', order: 1 },

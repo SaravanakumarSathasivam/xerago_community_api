@@ -52,6 +52,12 @@ const mapEventToFrontend = (eventDoc, currentUserId) => {
     isRegistered,
     tags: eventDoc.tags || [],
     status,
+    images: (eventDoc.images || []).map((img) => ({
+      filename: img.filename,
+      originalName: img.originalName,
+      url: img.url,
+      isPrimary: !!img.isPrimary,
+    })),
   };
 };
 
@@ -63,10 +69,56 @@ router.get(
   validate(eventSchemas.getEvents, "query"),
   async (req, res, next) => {
     try {
-      const events = await Event.find({})
-        .populate("organizer", "name email avatar department")
-        .sort({ startDate: 1 });
-      const mapped = events.map((e) => mapEventToFrontend(e, req.user?._id));
+      const { sort, order = 'asc', category, search, status } = req.query;
+      const match = {};
+      if (category && category !== 'all') match.tags = { $in: [category] };
+      if (status && ['upcoming','ongoing','completed'].includes(String(status))) {
+        // status is derived on frontend; approximate using dates
+        const now = new Date();
+        if (status === 'upcoming') match.startDate = { $gt: now };
+        if (status === 'ongoing') match.$and = [{ startDate: { $lte: now } }, { endDate: { $gte: now } }];
+        if (status === 'completed') match.endDate = { $lt: now };
+      }
+      if (search) {
+        match.$or = [
+          { title: { $regex: search, $options: 'i' } },
+          { description: { $regex: search, $options: 'i' } },
+          { tags: { $in: [new RegExp(search, 'i')] } },
+        ];
+      }
+
+      const normalized = String(sort || '').toLowerCase();
+
+      const pipeline = [
+        { $match: match },
+        { $addFields: { attendeesCount: { $size: { $ifNull: ['$attendees', []] } } } },
+      ];
+
+      // Apply filter behavior based on sort option
+      switch (normalized) {
+        case 'date': // upcoming only
+          pipeline.push({ $match: { startDate: { $gte: new Date() } } });
+          break;
+        case 'popular':
+          pipeline.push({ $match: { attendeesCount: { $gt: 0 } } });
+          break;
+        case 'recent':
+          pipeline.push({ $match: { createdAt: { $gte: new Date(Date.now() - 7*24*60*60*1000) } } });
+          break;
+        default:
+          break;
+      }
+
+      // Default ordering after filter
+      pipeline.push({ $sort: { startDate: 1 } });
+
+      const rows = await Event.aggregate(pipeline);
+      const ids = rows.map((r) => r._id);
+      const docs = await Event.find({ _id: { $in: ids } })
+        .populate("organizer", "name email avatar department");
+      const byId = new Map(docs.map((d) => [String(d._id), d]));
+      const ordered = ids.map((id) => byId.get(String(id))).filter(Boolean);
+      const mapped = ordered.map((e) => mapEventToFrontend(e, req.user?._id));
       res.json({ success: true, data: { events: mapped } });
     } catch (err) {
       next(err);
@@ -140,6 +192,14 @@ router.post(
               .filter(Boolean)
           : [];
 
+      // Map uploaded files to images array
+      const images = (req.files || []).map((file, idx) => ({
+        filename: file.filename,
+        originalName: file.originalname,
+        url: file.url || `/uploads/${file.path.replace(/\\/g, '/').split('uploads/')[1]}`,
+        isPrimary: idx === 0,
+      }));
+
       // Map to Event model fields
       const event = await Event.create({
         title,
@@ -155,6 +215,7 @@ router.post(
           : null,
         tags: [...new Set([type, category, ...normalizedTags].filter(Boolean))],
         status: "published",
+        images,
       });
 
       // Auto-register creator
@@ -182,6 +243,22 @@ router.put(
   validate(frontendSchemas.updateEvent),
   async (req, res, next) => {
     try {
+      const existing = await Event.findById(req.params.id).populate('organizer', 'name email avatar department');
+      if (!existing) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Event not found" });
+      }
+
+      // Enforce edit window: only editable before 24 hours of start time
+      const now = new Date();
+      const start = new Date(existing.startDate);
+      const ms24h = 24 * 60 * 60 * 1000;
+      const isWithin24h = start.getTime() - now.getTime() < ms24h;
+      if (isWithin24h) {
+        return res.status(400).json({ success: false, message: 'Event can no longer be edited within 24 hours of start time' });
+      }
+
       const {
         title,
         description,
@@ -207,11 +284,6 @@ router.put(
       const event = await Event.findByIdAndUpdate(req.params.id, updates, {
         new: true,
       }).populate("organizer", "name email avatar department");
-      if (!event) {
-        return res
-          .status(404)
-          .json({ success: false, message: "Event not found" });
-      }
       res.json({
         success: true,
         data: { event: mapEventToFrontend(event, req.user._id) },
@@ -221,6 +293,30 @@ router.put(
     }
   }
 );
+
+// Get event attendees (admin or organizer)
+router.get('/:id/attendees', async (req, res, next) => {
+  try {
+    const event = await Event.findById(req.params.id).populate('attendees.user', 'name email department avatar');
+    if (!event) return res.status(404).json({ success: false, message: 'Event not found' });
+
+    const isOrganizer = event.organizer?.toString?.() === req.user._id.toString();
+    const isAdmin = req.user.role === 'admin' || req.user.role === 'moderator';
+    if (!isOrganizer && !isAdmin) return res.status(403).json({ success: false, message: 'Not authorized' });
+
+    const attendees = event.attendees.map(a => ({
+      id: a.user._id,
+      name: a.user.name,
+      email: a.user.email,
+      department: a.user.department,
+      avatar: a.user.avatar,
+      status: a.status,
+      registeredAt: a.createdAt
+    }));
+
+    res.json({ success: true, data: { attendees } });
+  } catch (err) { next(err); }
+});
 
 // Delete event
 router.delete("/:id", async (req, res, next) => {

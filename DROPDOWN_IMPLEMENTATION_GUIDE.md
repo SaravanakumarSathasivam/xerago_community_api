@@ -67,7 +67,7 @@ const dropdownOptionSchema = new mongoose.Schema({
 2. **event_category** - Event categories (ai-innovation, analytics, etc.)
 3. **event_sort** - Event sorting options (date, popular)
 4. **forum_category** - Forum categories (general, tech, marketing, etc.)
-5. **forum_sort** - Forum sorting options (recent, popular, discussed)
+5. **forum_sort** - Forum sorting options (recent, popular, discussed, unanswered)
 6. **article_category** - Article categories (marketing, analytics, etc.)
 7. **article_type** - Article types (guide, tutorial, checklist, etc.)
 8. **article_difficulty** - Difficulty levels (beginner, intermediate, advanced)
