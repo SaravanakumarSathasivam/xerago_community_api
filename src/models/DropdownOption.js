@@ -117,7 +117,7 @@ dropdownOptionSchema.statics.seedDefaultOptions = async function() {
     // Article Sort Options
     { category: 'article_sort', value: 'recent', label: 'Most Recent', order: 1 },
     { category: 'article_sort', value: 'popular', label: 'Most Viewed', order: 2 },
-    { category: 'article_sort', value: 'liked', label: 'Most Liked', order: 3 },
+    { category: 'article_sort', value: 'likes', label: 'Most Liked', order: 3 },
 
     // Admin User Status Filter
     { category: 'admin_user_status', value: 'all', label: 'All Users', order: 1 },

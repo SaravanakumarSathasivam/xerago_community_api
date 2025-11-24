@@ -30,6 +30,7 @@ const mapArticleToFrontend = (doc, currentUserId) => {
     tags: doc.tags || [],
     readTime: doc.readingTime || 0,
     difficulty: 'Intermediate',
+    status: doc.status || 'draft',
     isBookmarked,
     isLiked,
     attachments: (doc.attachments || []).map((f) => ({
@@ -67,12 +68,38 @@ const toFrontendType = (doc) => {
   return 'Guide';
 };
 
-// Get articles (public) - only approved/published
+// Get articles (public) - only approved/published, but admin can see all including drafts
 router.get('/', searchLimiter, optionalAuth, validate(articleSchemas.getArticles, 'query'), async (req, res, next) => {
   try {
-    const { sort, order = 'desc', category, search } = req.query;
-    const match = { status: 'published' };
-    if (category && category !== 'all') match.category = category;
+    const { sort, order = 'desc', category, search, status } = req.query;
+    const isAdminOrMod = req.user?.role === 'admin' || req.user?.role === 'moderator';
+    
+    // Map frontend category labels to backend enum values
+    const categoryMap = {
+      'Marketing': 'marketing',
+      'Analytics': 'analytics',
+      'Technology': 'technology',
+      'AI & Innovation': 'ai',
+      'marketing': 'marketing',
+      'analytics': 'analytics',
+      'technology': 'technology',
+      'ai': 'ai',
+    };
+    
+    const match = {};
+    // Non-admin users only see published articles
+    if (!isAdminOrMod) {
+      match.status = 'published';
+    }
+    // Admin sees all articles unless status filter is specified
+    if (status && isAdminOrMod) {
+      match.status = status;
+    }
+    
+    if (category && category !== 'all') {
+      const backendCategory = categoryMap[category] || category;
+      match.category = backendCategory;
+    }
     if (search) {
       match.$or = [
         { title: { $regex: search, $options: 'i' } },
@@ -82,7 +109,7 @@ router.get('/', searchLimiter, optionalAuth, validate(articleSchemas.getArticles
     }
 
     const normalized = String(sort || '').toLowerCase();
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const sortDir = String(order).toLowerCase() === 'asc' ? 1 : -1;
 
     const pipeline = [
       { $match: match },
@@ -93,27 +120,29 @@ router.get('/', searchLimiter, optionalAuth, validate(articleSchemas.getArticles
       },
     ];
 
+    let sortStage = { publishedAt: -1 };
     switch (normalized) {
       case 'recent':
-        pipeline.push({ $match: { publishedAt: { $gte: sevenDaysAgo } } });
+        sortStage = { publishedAt: sortDir };
         break;
       case 'updated':
-        pipeline.push({ $match: { updatedAt: { $gte: sevenDaysAgo } } });
+        sortStage = { updatedAt: sortDir, publishedAt: -1 };
         break;
+      case 'popular':
       case 'views':
-        pipeline.push({ $match: { views: { $gt: 0 } } });
+        sortStage = { views: sortDir, publishedAt: -1 };
         break;
       case 'likes':
-        pipeline.push({ $match: { likesCount: { $gt: 0 } } });
+        sortStage = { likesCount: sortDir, publishedAt: -1 };
         break;
       case 'bookmarks':
-        pipeline.push({ $match: { bookmarksCount: { $gt: 0 } } });
+        sortStage = { bookmarksCount: sortDir, publishedAt: -1 };
         break;
       default:
-        break;
+        sortStage = { publishedAt: -1 };
     }
 
-    pipeline.push({ $sort: { publishedAt: -1 } });
+    pipeline.push({ $sort: sortStage });
 
     const rows = await Article.aggregate(pipeline);
     const ids = rows.map((r) => r._id);
@@ -121,7 +150,19 @@ router.get('/', searchLimiter, optionalAuth, validate(articleSchemas.getArticles
     const byId = new Map(docs.map((d) => [String(d._id), d]));
     const ordered = ids.map((id) => byId.get(String(id))).filter(Boolean);
     const mapped = ordered.map((a) => mapArticleToFrontend(a, req.user?._id));
-    res.json({ success: true, data: { articles: mapped } });
+    
+    // Separate published and pending articles for frontend convenience
+    const published = mapped.filter(a => a.status === 'published');
+    const pending = mapped.filter(a => a.status !== 'published');
+    
+    res.json({ 
+      success: true, 
+      data: { 
+        articles: mapped,
+        published,
+        pending
+      } 
+    });
   } catch (err) {
     next(err);
   }

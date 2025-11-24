@@ -221,4 +221,54 @@ userSchema.statics.getLeaderboard = function(limit = 10) {
     .limit(limit);
 };
 
+// Static method to get monthly top contributors
+userSchema.statics.getMonthlyTopContributors = async function(limit = 5) {
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+  const contributions = await this.aggregate([
+    { $match: { isActive: true } },
+    { $lookup: {
+        from: 'forums',
+        localField: '_id',
+        foreignField: 'author',
+        as: 'forumPosts'
+    } },
+    { $lookup: {
+        from: 'articles',
+        localField: '_id',
+        foreignField: 'author',
+        as: 'articles'
+    } },
+    { $addFields: {
+        monthlyPosts: { $size: { $filter: { input: '$forumPosts', as: 'post', cond: { $and: [ { $gte: ['$$post.createdAt', startOfMonth] }, { $lte: ['$$post.createdAt', endOfMonth] } ] } } } },
+        monthlyArticles: { $size: { $filter: { input: '$articles', as: 'article', cond: { $and: [ { $gte: ['$$article.createdAt', startOfMonth] }, { $lte: ['$$article.createdAt', endOfMonth] } ] } } } }
+    } },
+    { $addFields: {
+        totalMonthlyContributions: { $add: ['$monthlyPosts', '$monthlyArticles'] }
+    } },
+    { $match: { totalMonthlyContributions: { $gt: 0 } } },
+    { $sort: { totalMonthlyContributions: -1, 'gamification.points': -1 } },
+    { $limit: limit },
+    { $project: {
+        _id: 1,
+        name: 1,
+        avatar: 1,
+        department: 1,
+        'gamification.points': '$gamification.points',
+        totalMonthlyContributions: 1,
+    } }
+  ]);
+
+  return contributions.map(c => ({
+    id: c._id.toString(),
+    name: c.name,
+    avatar: c.avatar,
+    department: c.department,
+    points: c.gamification.points,
+    contribution: c.totalMonthlyContributions,
+  }));
+};
+
 module.exports = mongoose.model('User', userSchema);

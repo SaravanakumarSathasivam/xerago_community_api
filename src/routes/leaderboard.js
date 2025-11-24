@@ -33,6 +33,15 @@ router.get('/', optionalAuth, async (req, res, next) => {
   }
 });
 
+router.get('/top-contributors', optionalAuth, async (req, res, next) => {
+  try {
+    const topContributors = await User.getMonthlyTopContributors(5);
+    res.json({ success: true, data: { topContributors } });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Get user's position (requires auth)
 router.get('/position', authenticate, async (req, res, next) => {
   try {

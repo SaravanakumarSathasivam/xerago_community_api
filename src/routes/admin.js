@@ -59,8 +59,35 @@ router.get('/users', validate(adminSchemas.getUsers, 'query'), async (req, res, 
 // Update user role
 router.put('/users/:id/role', validate(adminSchemas.updateUserRole), async (req, res, next) => {
   try {
-    const user = await User.findByIdAndUpdate(req.params.id, { role: req.body.role }, { new: true });
-    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    const targetUserId = req.params.id;
+    const newRole = req.body.role;
+    const currentUser = req.user; // Authenticated user making the request
+
+    if (currentUser.id === targetUserId) {
+      return res.status(403).json({ success: false, message: 'You cannot change your own role.' });
+    }
+
+    const targetUser = await User.findById(targetUserId);
+    if (!targetUser) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Only Super Admin can change roles to 'admin' or 'super_admin'
+    if (newRole === 'admin' && currentUser.role !== 'super_admin') {
+      return res.status(403).json({ success: false, message: 'Only Super Admins can grant Admin roles.' });
+    }
+
+    // Super Admin cannot change another Super Admin's role
+    if (targetUser.role === 'super_admin' && currentUser.role === 'super_admin' && newRole !== 'super_admin') {
+      return res.status(403).json({ success: false, message: "Super Admins cannot change another Super Admin's role." });
+    }
+
+    // Prevent non-super_admin from changing existing admin to user
+    if (targetUser.role === 'admin' && newRole === 'user' && currentUser.role !== 'super_admin') {
+        return res.status(403).json({ success: false, message: 'Only Super Admins can demote an Admin.' });
+    }
+
+    const user = await User.findByIdAndUpdate(targetUserId, { role: newRole }, { new: true });
     res.json({ success: true, message: 'User role updated successfully', data: { user } });
   } catch (err) { next(err); }
 });

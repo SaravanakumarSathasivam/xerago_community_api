@@ -334,22 +334,9 @@ const articleSchemas = {
   getArticles: Joi.object({
     ...commonSchemas.pagination.describe(),
     search: Joi.string().max(200).trim().optional(),
-    sort: Joi.string().valid('recent', 'updated', 'views', 'likes', 'bookmarks').optional(),
+    sort: Joi.string().valid('recent', 'updated', 'popular', 'likes', 'bookmarks').optional(),
     order: Joi.string().valid('asc', 'desc').optional(),
-    category: Joi.string()
-      .valid(
-        "technology",
-        "marketing",
-        "analytics",
-        "ai",
-        "business",
-        "tutorial",
-        "news",
-        "case-study",
-        "best-practices",
-        "tools"
-      )
-      .optional(),
+    category: Joi.string().max(100).trim().optional(), // Allow frontend labels
     status: Joi.string().valid("draft", "published", "archived").optional(),
     featured: Joi.boolean().optional(),
     author: commonSchemas.objectId.optional(),

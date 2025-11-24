@@ -55,15 +55,28 @@ const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: config.upload.maxFileSize,
+    fileSize: config.upload.maxFileSize, // Default global limit
     files: 5 // Maximum 5 files per request
   }
 });
 
+// Factory function to create upload middleware with custom limits
+const createUploadMiddleware = (maxFileSize, maxFiles) => {
+  return multer({
+    storage: storage,
+    fileFilter: fileFilter,
+    limits: {
+      fileSize: maxFileSize || config.upload.maxFileSize,
+      files: maxFiles || 5,
+    },
+  });
+};
+
 // Middleware for single file upload
-const uploadSingle = (fieldName = 'file') => {
+const uploadSingle = (fieldName = 'file', limitFileSize = config.upload.maxFileSize) => {
   return (req, res, next) => {
-    const uploadMiddleware = upload.single(fieldName);
+    const currentUpload = createUploadMiddleware(limitFileSize, 1);
+    const uploadMiddleware = currentUpload.single(fieldName);
     
     uploadMiddleware(req, res, (err) => {
       if (err) {
@@ -74,12 +87,12 @@ const uploadSingle = (fieldName = 'file') => {
             case 'LIMIT_FILE_SIZE':
               return res.status(400).json({
                 success: false,
-                message: 'File too large. Maximum size is 10MB.'
+                message: `File too large. Maximum size is ${limitFileSize / (1024 * 1024)}MB.`
               });
             case 'LIMIT_FILE_COUNT':
               return res.status(400).json({
                 success: false,
-                message: 'Too many files. Maximum 5 files allowed.'
+                message: 'Too many files. Maximum 1 file allowed.'
               });
             case 'LIMIT_UNEXPECTED_FILE':
               return res.status(400).json({
@@ -111,9 +124,10 @@ const uploadSingle = (fieldName = 'file') => {
 };
 
 // Middleware for multiple files upload
-const uploadMultiple = (fieldName = 'files', maxCount = 5) => {
+const uploadMultiple = (fieldName = 'files', maxCount = 5, limitFileSize = config.upload.maxFileSize) => {
   return (req, res, next) => {
-    const uploadMiddleware = upload.array(fieldName, maxCount);
+    const currentUpload = createUploadMiddleware(limitFileSize, maxCount);
+    const uploadMiddleware = currentUpload.array(fieldName, maxCount);
     
     uploadMiddleware(req, res, (err) => {
       if (err) {
@@ -124,7 +138,7 @@ const uploadMultiple = (fieldName = 'files', maxCount = 5) => {
             case 'LIMIT_FILE_SIZE':
               return res.status(400).json({
                 success: false,
-                message: 'File too large. Maximum size is 10MB.'
+                message: `File too large. Maximum size is ${limitFileSize / (1024 * 1024)}MB.`
               });
             case 'LIMIT_FILE_COUNT':
               return res.status(400).json({
@@ -164,9 +178,10 @@ const uploadMultiple = (fieldName = 'files', maxCount = 5) => {
 };
 
 // Middleware for specific field uploads
-const uploadFields = (fields) => {
+const uploadFields = (fields, limitFileSize = config.upload.maxFileSize) => {
   return (req, res, next) => {
-    const uploadMiddleware = upload.fields(fields);
+    const currentUpload = createUploadMiddleware(limitFileSize, undefined);
+    const uploadMiddleware = currentUpload.fields(fields);
     
     uploadMiddleware(req, res, (err) => {
       if (err) {
@@ -177,7 +192,7 @@ const uploadFields = (fields) => {
             case 'LIMIT_FILE_SIZE':
               return res.status(400).json({
                 success: false,
-                message: 'File too large. Maximum size is 10MB.'
+                message: `File too large. Maximum size is ${limitFileSize / (1024 * 1024)}MB.`
               });
             case 'LIMIT_FILE_COUNT':
               return res.status(400).json({
@@ -221,14 +236,21 @@ const uploadFields = (fields) => {
 // Middleware for avatar upload
 const uploadAvatar = uploadSingle('avatar');
 
-// Middleware for article images
-const uploadArticleImages = uploadMultiple('images', 3);
+const MB = 1024 * 1024;
+const FILE_SIZE_LIMITS = {
+  forum: 2 * MB,
+  article: 5 * MB,
+  event: 5 * MB,
+};
 
-// Middleware for event images
-const uploadEventImages = uploadMultiple('images', 5);
+// Middleware for article images (5MB limit, max 3 files)
+const uploadArticleImages = uploadMultiple('images', 3, FILE_SIZE_LIMITS.article);
 
-// Middleware for forum attachments
-const uploadForumAttachments = uploadMultiple('attachments', 3);
+// Middleware for event images (5MB limit, max 5 files)
+const uploadEventImages = uploadMultiple('images', 5, FILE_SIZE_LIMITS.event);
+
+// Middleware for forum attachments (2MB limit, max 3 files)
+const uploadForumAttachments = uploadMultiple('attachments', 3, FILE_SIZE_LIMITS.forum);
 
 // Utility function to delete file
 const deleteFile = (filePath) => {
@@ -308,5 +330,6 @@ module.exports = {
   uploadForumAttachments,
   deleteFile,
   getFileInfo,
-  cleanupOldFiles
+  cleanupOldFiles,
+  FILE_SIZE_LIMITS,
 };
