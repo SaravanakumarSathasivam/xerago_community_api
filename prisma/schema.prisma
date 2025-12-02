@@ -1,0 +1,77 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum ArticleStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model Article {
+  id          String         @id @default(cuid())
+  title       String
+  content     String
+  category    String
+  status      ArticleStatus  @default(DRAFT)
+  featured    Boolean        @default(false)
+  views       Int            @default(0)
+  authorId    String
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  publishedAt DateTime?
+
+  tags        ArticleTag[]
+  likes       ArticleLike[]
+  bookmarks   ArticleBookmark[]
+  attachments ArticleAttachment[]
+}
+
+model ArticleTag {
+  id        Int     @id @default(autoincrement())
+  articleId String
+  value     String
+
+  article   Article @relation(fields: [articleId], references: [id])
+
+  @@index([articleId])
+}
+
+model ArticleLike {
+  articleId String
+  userId    String
+
+  article   Article @relation(fields: [articleId], references: [id])
+
+  @@id([articleId, userId])
+}
+
+model ArticleBookmark {
+  articleId String
+  userId    String
+
+  article   Article @relation(fields: [articleId], references: [id])
+
+  @@id([articleId, userId])
+}
+
+model ArticleAttachment {
+  id           Int     @id @default(autoincrement())
+  articleId    String
+  filename     String
+  originalName String
+  mimeType     String
+  size         Int
+  url          String
+
+  article      Article @relation(fields: [articleId], references: [id])
+
+  @@index([articleId])
+}
+
+

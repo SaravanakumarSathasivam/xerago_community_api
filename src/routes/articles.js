@@ -4,6 +4,7 @@ const { validate, articleSchemas, frontendSchemas } = require('../middleware/val
 const { searchLimiter, createUserLimiter } = require('../middleware/rateLimiter');
 const { uploadArticleImages } = require('../middleware/upload');
 const Article = require('../models/Article');
+const articleRepo = require('../repositories/articleRepository');
 
 const router = express.Router();
 
@@ -72,97 +73,16 @@ const toFrontendType = (doc) => {
 router.get('/', searchLimiter, optionalAuth, validate(articleSchemas.getArticles, 'query'), async (req, res, next) => {
   try {
     const { sort, order = 'desc', category, search, status } = req.query;
-    const isAdminOrMod = req.user?.role === 'admin' || req.user?.role === 'moderator';
-    
-    // Map frontend category labels to backend enum values
-    const categoryMap = {
-      'Marketing': 'marketing',
-      'Analytics': 'analytics',
-      'Technology': 'technology',
-      'AI & Innovation': 'ai',
-      'marketing': 'marketing',
-      'analytics': 'analytics',
-      'technology': 'technology',
-      'ai': 'ai',
-    };
-    
-    const match = {};
-    // Non-admin users only see published articles
-    if (!isAdminOrMod) {
-      match.status = 'published';
-    }
-    // Admin sees all articles unless status filter is specified
-    if (status && isAdminOrMod) {
-      match.status = status;
-    }
-    
-    if (category && category !== 'all') {
-      const backendCategory = categoryMap[category] || category;
-      match.category = backendCategory;
-    }
-    if (search) {
-      match.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { content: { $regex: search, $options: 'i' } },
-        { tags: { $in: [new RegExp(search, 'i')] } },
-      ];
-    }
-
-    const normalized = String(sort || '').toLowerCase();
-    const sortDir = String(order).toLowerCase() === 'asc' ? 1 : -1;
-
-    const pipeline = [
-      { $match: match },
-      { $addFields: {
-          likesCount: { $size: { $ifNull: ['$likes', []] } },
-          bookmarksCount: { $size: { $ifNull: ['$bookmarks', []] } },
-        }
-      },
-    ];
-
-    let sortStage = { publishedAt: -1 };
-    switch (normalized) {
-      case 'recent':
-        sortStage = { publishedAt: sortDir };
-        break;
-      case 'updated':
-        sortStage = { updatedAt: sortDir, publishedAt: -1 };
-        break;
-      case 'popular':
-      case 'views':
-        sortStage = { views: sortDir, publishedAt: -1 };
-        break;
-      case 'likes':
-        sortStage = { likesCount: sortDir, publishedAt: -1 };
-        break;
-      case 'bookmarks':
-        sortStage = { bookmarksCount: sortDir, publishedAt: -1 };
-        break;
-      default:
-        sortStage = { publishedAt: -1 };
-    }
-
-    pipeline.push({ $sort: sortStage });
-
-    const rows = await Article.aggregate(pipeline);
-    const ids = rows.map((r) => r._id);
-    const docs = await Article.find({ _id: { $in: ids } }).populate('author', 'name email avatar department');
-    const byId = new Map(docs.map((d) => [String(d._id), d]));
-    const ordered = ids.map((id) => byId.get(String(id))).filter(Boolean);
-    const mapped = ordered.map((a) => mapArticleToFrontend(a, req.user?._id));
-    
-    // Separate published and pending articles for frontend convenience
-    const published = mapped.filter(a => a.status === 'published');
-    const pending = mapped.filter(a => a.status !== 'published');
-    
-    res.json({ 
-      success: true, 
-      data: { 
-        articles: mapped,
-        published,
-        pending
-      } 
+    const result = await articleRepo.list({
+      sort,
+      order,
+      category,
+      search,
+      status,
+      currentUser: req.user,
     });
+
+    res.json({ success: true, data: result });
   } catch (err) {
     next(err);
   }
@@ -171,9 +91,9 @@ router.get('/', searchLimiter, optionalAuth, validate(articleSchemas.getArticles
 // Get specific article (public)
 router.get('/:id', optionalAuth, async (req, res, next) => {
   try {
-    const article = await Article.findById(req.params.id).populate('author', 'name email avatar department');
+    const article = await articleRepo.getById(req.params.id, req.user);
     if (!article) return res.status(404).json({ success: false, message: 'Article not found' });
-    res.json({ success: true, data: { article: mapArticleToFrontend(article, req.user?._id) } });
+    res.json({ success: true, data: { article } });
   } catch (err) {
     next(err);
   }
@@ -192,20 +112,13 @@ router.post('/', uploadArticleImages, validate(frontendSchemas.createArticle), a
     else if (typeof tags === 'string') {
       try {
         const parsed = JSON.parse(tags);
-        normalizedTags = Array.isArray(parsed) ? parsed.map((t) => String(t).trim()).filter(Boolean) : tags.split(',').map((t) => t.trim()).filter(Boolean);
+        normalizedTags = Array.isArray(parsed)
+          ? parsed.map((t) => String(t).trim()).filter(Boolean)
+          : tags.split(',').map((t) => t.trim()).filter(Boolean);
       } catch {
         normalizedTags = tags.split(',').map((t) => t.trim()).filter(Boolean);
       }
     }
-
-    // Map frontend category label to backend enum best-effort
-    const categoryMap = {
-      Marketing: 'marketing',
-      Analytics: 'analytics',
-      Technology: 'technology',
-      'AI & Innovation': 'ai',
-    };
-    const backendCategory = categoryMap[category] || 'technology';
 
     // Map uploaded files to attachments
     const attachments = (req.files || []).map((file) => ({
@@ -216,19 +129,13 @@ router.post('/', uploadArticleImages, validate(frontendSchemas.createArticle), a
       url: file.url || `/uploads/${file.path.replace(/\\/g, '/').split('uploads/')[1]}`,
     }));
 
-    const article = await Article.create({
-      title,
-      content,
-      author: req.user._id,
-      category: backendCategory,
-      tags: normalizedTags,
-      status: 'draft', // pending admin approval → admin will set to 'published'
-      featured: false,
+    const article = await articleRepo.create({
+      data: { title, content, category, tags: normalizedTags },
+      currentUser: req.user,
       attachments,
     });
 
-    const created = await Article.findById(article._id).populate('author', 'name email avatar department');
-    res.status(201).json({ success: true, data: { article: mapArticleToFrontend(created, req.user._id) } });
+    res.status(201).json({ success: true, data: { article } });
   } catch (err) {
     next(err);
   }
