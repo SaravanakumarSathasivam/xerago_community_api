@@ -531,12 +531,37 @@ const frontendSchemas = {
   createEvent: Joi.object({
     title: Joi.string().min(2).max(200).trim().required(),
     description: Joi.string().min(5).max(5000).trim().required(),
-    date: Joi.alternatives().try(Joi.date(), Joi.string()).required(),
+    startDate: Joi.alternatives().try(Joi.date(), Joi.string()).required(),
     endDate: Joi.alternatives().try(Joi.date(), Joi.string()).optional(),
-    location: Joi.string().max(200).trim().required(),
-    type: Joi.string().max(50).trim().optional(),
-    category: Joi.string().max(100).trim().optional(),
+    location: Joi.alternatives().try(
+      Joi.string().max(200).trim(),
+      Joi.object({
+        name: Joi.string().max(200).trim().optional(),
+        address: Joi.string().max(200).trim().optional(),
+        city: Joi.string().max(50).trim().optional(),
+        state: Joi.string().max(50).trim().optional(),
+        country: Joi.string().max(50).trim().optional(),
+        coordinates: Joi.object({
+          latitude: Joi.number().min(-90).max(90).optional(),
+          longitude: Joi.number().min(-180).max(180).optional(),
+        }).optional(),
+        meetingLink: Joi.string().uri().optional(),
+      })
+    ).required(),
+    // Frontend "type" = event type (workshop, lunch-learn, etc.) - maps to backend category
+    type: Joi.string().valid(
+      'workshop', 'lunch-learn', 'presentation', 'team-building', 'conference', 'training',
+      // Legacy values
+      'seminar', 'meeting', 'social', 'webinar', 'other'
+    ).optional(),
+    // Frontend "category" = event category (ai-innovation, analytics, etc.) - goes into tags
+    category: Joi.string().valid(
+      'ai-innovation', 'analytics', 'technology', 'marketing', 'social', 'professional-development'
+    ).optional(),
     maxAttendees: Joi.alternatives()
+      .try(Joi.number().integer().min(1), Joi.string())
+      .optional(),
+    capacity: Joi.alternatives()
       .try(Joi.number().integer().min(1), Joi.string())
       .optional(),
     tags: Joi.alternatives()
@@ -550,10 +575,37 @@ const frontendSchemas = {
   updateEvent: Joi.object({
     title: Joi.string().min(2).max(200).trim().optional(),
     description: Joi.string().min(5).max(5000).trim().optional(),
-    date: Joi.alternatives().try(Joi.date(), Joi.string()).optional(),
+    startDate: Joi.alternatives().try(Joi.date(), Joi.string()).optional(),
     endDate: Joi.alternatives().try(Joi.date(), Joi.string()).optional(),
-    location: Joi.string().max(200).trim().optional(),
+    location: Joi.alternatives().try(
+      Joi.string().max(200).trim(),
+      Joi.object({
+        name: Joi.string().max(200).trim().optional(),
+        address: Joi.string().max(200).trim().optional(),
+        city: Joi.string().max(50).trim().optional(),
+        state: Joi.string().max(50).trim().optional(),
+        country: Joi.string().max(50).trim().optional(),
+        coordinates: Joi.object({
+          latitude: Joi.number().min(-90).max(90).optional(),
+          longitude: Joi.number().min(-180).max(180).optional(),
+        }).optional(),
+        meetingLink: Joi.string().uri().optional(),
+      })
+    ).optional(),
+    // Frontend "type" = event type (workshop, lunch-learn, etc.) - maps to backend category
+    type: Joi.string().valid(
+      'workshop', 'lunch-learn', 'presentation', 'team-building', 'conference', 'training',
+      // Legacy values
+      'seminar', 'meeting', 'social', 'webinar', 'other'
+    ).optional(),
+    // Frontend "category" = event category (ai-innovation, analytics, etc.) - goes into tags
+    category: Joi.string().valid(
+      'ai-innovation', 'analytics', 'technology', 'marketing', 'social', 'professional-development'
+    ).optional(),
     maxAttendees: Joi.alternatives()
+      .try(Joi.number().integer().min(1), Joi.string())
+      .optional(),
+    capacity: Joi.alternatives()
       .try(Joi.number().integer().min(1), Joi.string())
       .optional(),
     tags: Joi.alternatives()

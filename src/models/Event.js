@@ -43,14 +43,17 @@ const eventSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Category is required'],
     enum: [
+      // Frontend event_type values
       'workshop',
+      'lunch-learn',
+      'presentation',
+      'team-building',
+      'conference',
+      'training',
+      // Legacy values for backward compatibility
       'seminar',
       'meeting',
-      'training',
-      'conference',
       'social',
-      'team-building',
-      'presentation',
       'webinar',
       'other'
     ]
