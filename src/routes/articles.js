@@ -13,6 +13,8 @@ const mapArticleToFrontend = (doc, currentUserId) => {
   const isBookmarked = currentUserId ? doc.bookmarks?.some((u) => u.toString() === currentUserId.toString()) : false;
   return {
     id: doc._id.toString(),
+    _id: doc._id.toString(),
+    sku: doc.sku || doc._id.toString(), // Fallback to ID if SKU not set
     title: doc.title,
     content: doc.content,
     author: {
@@ -168,11 +170,31 @@ router.get('/', searchLimiter, optionalAuth, validate(articleSchemas.getArticles
   }
 });
 
-// Get specific article (public)
-router.get('/:id', optionalAuth, async (req, res, next) => {
+// Get specific article by SKU or ID (public)
+router.get('/:identifier', optionalAuth, async (req, res, next) => {
   try {
-    const article = await Article.findById(req.params.id).populate('author', 'name email avatar department');
+    const { identifier } = req.params;
+    
+    // Try to find by SKU first, then by ID
+    let article = await Article.findOne({ sku: identifier.toLowerCase() }).populate('author', 'name email avatar department');
+    
+    // If not found by SKU, try by ID
+    if (!article) {
+      article = await Article.findById(identifier).populate('author', 'name email avatar department');
+    }
+    
     if (!article) return res.status(404).json({ success: false, message: 'Article not found' });
+    
+    const isAdminOrMod = req.user?.role === 'admin' || req.user?.role === 'moderator';
+    
+    // Non-admin users can only see published articles
+    if (!isAdminOrMod && article.status !== 'published') {
+      // Only show to author
+      if (article.author._id.toString() !== req.user?._id?.toString()) {
+        return res.status(403).json({ success: false, message: 'Article not published yet' });
+      }
+    }
+    
     res.json({ success: true, data: { article: mapArticleToFrontend(article, req.user?._id) } });
   } catch (err) {
     next(err);

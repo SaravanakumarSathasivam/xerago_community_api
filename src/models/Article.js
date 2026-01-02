@@ -7,6 +7,13 @@ const articleSchema = new mongoose.Schema({
     trim: true,
     maxlength: [200, 'Title cannot exceed 200 characters']
   },
+  sku: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true,
+    lowercase: true
+  },
   content: {
     type: String,
     required: [true, 'Article content is required'],
@@ -120,6 +127,7 @@ articleSchema.index({ featured: 1 });
 articleSchema.index({ tags: 1 });
 articleSchema.index({ title: 'text', content: 'text', excerpt: 'text' });
 articleSchema.index({ publishedAt: -1 });
+articleSchema.index({ sku: 1 });
 
 // Virtual for like count
 articleSchema.virtual('likeCount').get(function() {
@@ -146,7 +154,18 @@ articleSchema.virtual('slug').get(function() {
     .trim('-');
 });
 
-// Pre-save middleware to calculate reading time and set published date
+// Generate SKU from title
+const generateSKU = (title) => {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9 -]/g, '') // Remove special characters
+    .replace(/\s+/g, '-') // Replace spaces with hyphens
+    .replace(/-+/g, '-') // Replace multiple hyphens with single
+    .replace(/^-|-$/g, '') // Remove leading/trailing hyphens
+    .substring(0, 100); // Limit length
+};
+
+// Pre-save middleware to calculate reading time, set published date, and generate SKU
 articleSchema.pre('save', function(next) {
   // Calculate reading time (average 200 words per minute)
   const wordCount = this.content.split(/\s+/).length;
@@ -155,6 +174,12 @@ articleSchema.pre('save', function(next) {
   // Set published date when status changes to published
   if (this.isModified('status') && this.status === 'published' && !this.publishedAt) {
     this.publishedAt = new Date();
+  }
+  
+  // Generate SKU from title if not set or title changed
+  if (!this.sku || this.isModified('title')) {
+    let baseSKU = generateSKU(this.title);
+    this.sku = baseSKU;
   }
   
   next();

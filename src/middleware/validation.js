@@ -257,6 +257,9 @@ const forumSchemas = {
     status: Joi.string()
       .valid("active", "closed", "archived", "pinned")
       .optional(),
+    approvalStatus: Joi.string()
+      .valid("pending", "approved", "rejected")
+      .optional(),
     author: commonSchemas.objectId.optional(),
     tags: Joi.array().items(Joi.string().trim()).optional(),
   }),

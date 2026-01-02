@@ -1,4 +1,5 @@
 const rateLimit = require('express-rate-limit');
+const jwt = require('jsonwebtoken');
 const config = require('../config/config');
 const logger = require('../utils/logger');
 
@@ -44,22 +45,50 @@ const customStore = {
   }
 };
 
-// General rate limiter
+// Session-based key generator: uses user ID from JWT if authenticated, otherwise falls back to IP
+const getSessionKey = (req) => {
+  // If user is authenticated (from JWT), use user ID as session identifier
+  if (req.user && req.user._id) {
+    return `session:${req.user._id.toString()}`;
+  }
+  
+  // For unauthenticated requests, try to extract user ID from token (even if expired)
+  // This allows rate limiting per "session" even for expired tokens
+  try {
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    if (token) {
+      // Decode without verification to get user ID (for rate limiting purposes)
+      const decoded = jwt.decode(token);
+      if (decoded && decoded.id) {
+        return `session:${decoded.id}`;
+      }
+    }
+  } catch (error) {
+    // If token decoding fails, fall back to IP
+  }
+  
+  // Fallback to IP for completely unauthenticated requests
+  return `ip:${req.ip}`;
+};
+
+// General rate limiter (session-based)
 const generalLimiter = rateLimit({
   windowMs: config.rateLimit.windowMs,
   max: config.rateLimit.maxRequests,
+  keyGenerator: getSessionKey,
   message: {
     success: false,
-    message: 'Too many requests from this IP, please try again later.'
+    message: 'Too many requests from this session, please try again later.'
   },
   standardHeaders: true,
   legacyHeaders: false,
   store: customStore,
   handler: (req, res) => {
-    logger.warn(`Rate limit exceeded for IP: ${req.ip}`);
+    const identifier = req.user ? `user:${req.user._id}` : `ip:${req.ip}`;
+    logger.warn(`Rate limit exceeded for session: ${identifier}`);
     res.status(429).json({
       success: false,
-      message: 'Too many requests from this IP, please try again later.',
+      message: 'Too many requests from this session, please try again later.',
       retryAfter: Math.round(config.rateLimit.windowMs / 1000)
     });
   }
@@ -70,6 +99,7 @@ const isDev = String(config.nodeEnv).toLowerCase() === 'development';
 const authLimiter = rateLimit({
   windowMs: isDev ? 60 * 1000 : 15 * 60 * 1000, // 1 min in dev, 15 min otherwise
   max: isDev ? 1000 : 10, // Allow many attempts in dev for testing
+  keyGenerator: getSessionKey,
   message: {
     success: false,
     message: 'Too many authentication attempts, please try again later.'
@@ -78,7 +108,8 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
   store: customStore,
   handler: (req, res) => {
-    logger.warn(`Auth rate limit exceeded for IP: ${req.ip}`);
+    const identifier = req.user ? `user:${req.user._id}` : `ip:${req.ip}`;
+    logger.warn(`Auth rate limit exceeded for session: ${identifier}`);
     res.status(429).json({
       success: false,
       message: 'Too many authentication attempts, please try again later.',
@@ -87,10 +118,11 @@ const authLimiter = rateLimit({
   }
 });
 
-// Password reset rate limiter
+// Password reset rate limiter (session-based)
 const passwordResetLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 3, // 3 attempts per hour
+  keyGenerator: getSessionKey,
   message: {
     success: false,
     message: 'Too many password reset attempts, please try again later.'
@@ -99,7 +131,8 @@ const passwordResetLimiter = rateLimit({
   legacyHeaders: false,
   store: customStore,
   handler: (req, res) => {
-    logger.warn(`Password reset rate limit exceeded for IP: ${req.ip}`);
+    const identifier = req.user ? `user:${req.user._id}` : `ip:${req.ip}`;
+    logger.warn(`Password reset rate limit exceeded for session: ${identifier}`);
     res.status(429).json({
       success: false,
       message: 'Too many password reset attempts, please try again later.',
@@ -108,10 +141,11 @@ const passwordResetLimiter = rateLimit({
   }
 });
 
-// Email verification rate limiter
+// Email verification rate limiter (session-based)
 const emailVerificationLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 5, // 5 attempts per hour
+  keyGenerator: getSessionKey,
   message: {
     success: false,
     message: 'Too many email verification attempts, please try again later.'
@@ -120,7 +154,8 @@ const emailVerificationLimiter = rateLimit({
   legacyHeaders: false,
   store: customStore,
   handler: (req, res) => {
-    logger.warn(`Email verification rate limit exceeded for IP: ${req.ip}`);
+    const identifier = req.user ? `user:${req.user._id}` : `ip:${req.ip}`;
+    logger.warn(`Email verification rate limit exceeded for session: ${identifier}`);
     res.status(429).json({
       success: false,
       message: 'Too many email verification attempts, please try again later.',
@@ -129,10 +164,11 @@ const emailVerificationLimiter = rateLimit({
   }
 });
 
-// File upload rate limiter
+// File upload rate limiter (session-based)
 const uploadLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 50, // 50 uploads per hour
+  keyGenerator: getSessionKey,
   message: {
     success: false,
     message: 'Too many file uploads, please try again later.'
@@ -141,7 +177,8 @@ const uploadLimiter = rateLimit({
   legacyHeaders: false,
   store: customStore,
   handler: (req, res) => {
-    logger.warn(`Upload rate limit exceeded for IP: ${req.ip}`);
+    const identifier = req.user ? `user:${req.user._id}` : `ip:${req.ip}`;
+    logger.warn(`Upload rate limit exceeded for session: ${identifier}`);
     res.status(429).json({
       success: false,
       message: 'Too many file uploads, please try again later.',
@@ -150,10 +187,11 @@ const uploadLimiter = rateLimit({
   }
 });
 
-// Search rate limiter
+// Search rate limiter (session-based)
 const searchLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 100, // 100 searches per minute
+  keyGenerator: getSessionKey,
   message: {
     success: false,
     message: 'Too many search requests, please try again later.'
@@ -162,7 +200,8 @@ const searchLimiter = rateLimit({
   legacyHeaders: false,
   store: customStore,
   handler: (req, res) => {
-    logger.warn(`Search rate limit exceeded for IP: ${req.ip}`);
+    const identifier = req.user ? `user:${req.user._id}` : `ip:${req.ip}`;
+    logger.warn(`Search rate limit exceeded for session: ${identifier}`);
     res.status(429).json({
       success: false,
       message: 'Too many search requests, please try again later.',
@@ -171,10 +210,11 @@ const searchLimiter = rateLimit({
   }
 });
 
-// Comment/Reply rate limiter
+// Comment/Reply rate limiter (session-based)
 const commentLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 10, // 10 comments per minute
+  keyGenerator: getSessionKey,
   message: {
     success: false,
     message: 'Too many comments, please try again later.'
@@ -183,7 +223,8 @@ const commentLimiter = rateLimit({
   legacyHeaders: false,
   store: customStore,
   handler: (req, res) => {
-    logger.warn(`Comment rate limit exceeded for IP: ${req.ip}`);
+    const identifier = req.user ? `user:${req.user._id}` : `ip:${req.ip}`;
+    logger.warn(`Comment rate limit exceeded for session: ${identifier}`);
     res.status(429).json({
       success: false,
       message: 'Too many comments, please try again later.',
@@ -192,11 +233,12 @@ const commentLimiter = rateLimit({
   }
 });
 
-// Create custom rate limiter
+// Create custom rate limiter (session-based)
 const createCustomLimiter = (windowMs, max, message) => {
   return rateLimit({
     windowMs,
     max,
+    keyGenerator: getSessionKey,
     message: {
       success: false,
       message: message || 'Too many requests, please try again later.'
@@ -205,7 +247,8 @@ const createCustomLimiter = (windowMs, max, message) => {
     legacyHeaders: false,
     store: customStore,
     handler: (req, res) => {
-      logger.warn(`Custom rate limit exceeded for IP: ${req.ip}`);
+      const identifier = req.user ? `user:${req.user._id}` : `ip:${req.ip}`;
+      logger.warn(`Custom rate limit exceeded for session: ${identifier}`);
       res.status(429).json({
         success: false,
         message: message || 'Too many requests, please try again later.',
@@ -215,14 +258,12 @@ const createCustomLimiter = (windowMs, max, message) => {
   });
 };
 
-// User-specific rate limiter
+// User-specific rate limiter (session-based)
 const createUserLimiter = (windowMs, max, message) => {
   return rateLimit({
     windowMs,
     max,
-    keyGenerator: (req) => {
-      return req.user ? req.user._id.toString() : req.ip;
-    },
+    keyGenerator: getSessionKey,
     message: {
       success: false,
       message: message || 'Too many requests, please try again later.'
@@ -231,8 +272,8 @@ const createUserLimiter = (windowMs, max, message) => {
     legacyHeaders: false,
     store: customStore,
     handler: (req, res) => {
-      const identifier = req.user ? req.user._id.toString() : req.ip;
-      logger.warn(`User rate limit exceeded for: ${identifier}`);
+      const identifier = req.user ? `user:${req.user._id}` : `ip:${req.ip}`;
+      logger.warn(`User rate limit exceeded for session: ${identifier}`);
       res.status(429).json({
         success: false,
         message: message || 'Too many requests, please try again later.',

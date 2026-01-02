@@ -56,12 +56,23 @@ const mapReplyToFrontend = (replyDoc, currentUserId) => {
 // Get forum posts (public)
 router.get('/posts', searchLimiter, optionalAuth, validate(forumSchemas.getPosts, 'query'), async (req, res, next) => {
   try {
-    const { sort, filter, order = 'desc', category, search } = req.query;
+    const { sort, filter, order = 'desc', category, search, approvalStatus } = req.query;
 
     const isAdminOrMod = req.user?.role === 'admin' || req.user?.role === 'moderator';
 
     const match = {};
-    if (!isAdminOrMod) match.approvalStatus = 'approved';
+    // Default: non-admins only see approved posts, admins see all except rejected (unless filter specified)
+    if (!isAdminOrMod) {
+      match.approvalStatus = 'approved';
+    } else {
+      // Admins can filter by approvalStatus, but default excludes rejected
+      if (approvalStatus) {
+        match.approvalStatus = approvalStatus;
+      } else {
+        // Default for admins: show pending and approved, exclude rejected
+        match.approvalStatus = { $in: ['pending', 'approved'] };
+      }
+    }
     if (category && category !== 'all') match.category = category;
     if (search) {
       match.$or = [
@@ -377,6 +388,32 @@ router.post('/posts/:id/like', createUserLimiter(60 * 1000, 30, 'Too many like a
     await post.save();
     const populated = await Forum.findById(req.params.id).populate('author', 'name email avatar department');
     res.json({ success: true, data: { post: mapPostToFrontend(populated, req.user._id) } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Reject forum post (admin/moderator only)
+router.post('/posts/:id/reject', async (req, res, next) => {
+  try {
+    if (req.user.role !== 'admin' && req.user.role !== 'moderator') {
+      return res.status(403).json({ success: false, message: 'Only admins and moderators can reject posts' });
+    }
+    
+    const post = await Forum.findById(req.params.id);
+    if (!post) return res.status(404).json({ success: false, message: 'Post not found' });
+    
+    post.approvalStatus = 'rejected';
+    post.approvedBy = req.user._id;
+    post.approvedAt = new Date();
+    await post.save();
+    
+    const populated = await Forum.findById(req.params.id).populate('author', 'name email avatar department');
+    res.json({ 
+      success: true, 
+      message: 'Post rejected successfully',
+      data: { post: mapPostToFrontend(populated, req.user._id) } 
+    });
   } catch (err) {
     next(err);
   }
