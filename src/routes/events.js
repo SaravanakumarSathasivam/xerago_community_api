@@ -193,16 +193,13 @@ router.get(
         { $addFields: { attendeesCount: { $size: { $ifNull: ['$attendees', []] } } } },
       ];
 
-      // Apply filter behavior based on sort option
+      // Apply filter behavior based on sort option – aligned with event_sort options
       switch (normalized) {
         case 'date': // upcoming only
           pipeline.push({ $match: { startDate: { $gte: new Date() } } });
           break;
         case 'popular':
           pipeline.push({ $match: { attendeesCount: { $gt: 0 } } });
-          break;
-        case 'recent':
-          pipeline.push({ $match: { createdAt: { $gte: new Date(Date.now() - 7*24*60*60*1000) } } });
           break;
         default:
           break;

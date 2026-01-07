@@ -243,8 +243,68 @@ const FILE_SIZE_LIMITS = {
   event: 5 * MB,
 };
 
-// Middleware for article images (5MB limit, max 3 files)
-const uploadArticleImages = uploadMultiple('images', 3, FILE_SIZE_LIMITS.article);
+// Middleware for article images/attachments (5MB limit, max 3 files)
+// Accepts both 'images' and 'attachments' field names for backward compatibility
+const uploadArticleImages = (req, res, next) => {
+  const currentUpload = createUploadMiddleware(FILE_SIZE_LIMITS.article, 3);
+  const uploadMiddleware = currentUpload.fields([
+    { name: 'images', maxCount: 3 },
+    { name: 'attachments', maxCount: 3 }
+  ]);
+  
+  uploadMiddleware(req, res, (err) => {
+    if (err) {
+      logger.error('File upload error:', err);
+      
+      if (err instanceof multer.MulterError) {
+        switch (err.code) {
+          case 'LIMIT_FILE_SIZE':
+            return res.status(400).json({
+              success: false,
+              message: `File too large. Maximum size is ${FILE_SIZE_LIMITS.article / (1024 * 1024)}MB.`
+            });
+          case 'LIMIT_FILE_COUNT':
+            return res.status(400).json({
+              success: false,
+              message: 'Too many files. Maximum 3 files allowed.'
+            });
+          case 'LIMIT_UNEXPECTED_FILE':
+            return res.status(400).json({
+              success: false,
+              message: 'Unexpected file field. Use "images" or "attachments" field name.'
+            });
+          default:
+            return res.status(400).json({
+              success: false,
+              message: 'File upload error.'
+            });
+        }
+      }
+      
+      return res.status(400).json({
+        success: false,
+        message: err.message
+      });
+    }
+    
+    // Combine images and attachments into a single files array
+    if (req.files) {
+      const allFiles = [];
+      if (req.files.images) {
+        allFiles.push(...req.files.images);
+      }
+      if (req.files.attachments) {
+        allFiles.push(...req.files.attachments);
+      }
+      req.files = allFiles.map(file => ({
+        ...file,
+        url: `/uploads/${path.relative(config.upload.uploadPath, file.path)}`
+      }));
+    }
+    
+    next();
+  });
+};
 
 // Middleware for event images (5MB limit, max 5 files)
 const uploadEventImages = uploadMultiple('images', 5, FILE_SIZE_LIMITS.event);

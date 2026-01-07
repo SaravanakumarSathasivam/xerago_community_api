@@ -238,8 +238,9 @@ const forumSchemas = {
   getPosts: Joi.object({
     ...commonSchemas.pagination.describe(),
     search: Joi.string().max(200).trim().optional(),
+    // Align with frontend forum_sort options
     sort: Joi.string()
-      .valid('recent', 'updated', 'popular', 'discussed', 'unanswered', 'views')
+      .valid('recent', 'popular', 'discussed', 'unanswered')
       .optional(),
     order: Joi.string().valid('asc', 'desc').optional(),
     category: Joi.string()
@@ -500,7 +501,8 @@ const eventSchemas = {
   getEvents: Joi.object({
     ...commonSchemas.pagination.describe(),
     search: Joi.string().max(200).trim().optional(),
-    sort: Joi.string().valid('date', 'popular', 'recent').optional(),
+    // Align with frontend event_sort options
+    sort: Joi.string().valid('date', 'popular').optional(),
     order: Joi.string().valid('asc', 'desc').optional(),
     category: Joi.string()
       .valid(
